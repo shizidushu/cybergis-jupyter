@@ -1,0 +1,159 @@
+FROM jupyter/datascience-notebook
+
+USER root 
+
+### TauDEM installation adapted from https://github.com/hydroshare/hydroshare-jupyterhub/blob/develop/docker/docker-base/Dockerfile
+RUN apt update \
+    && apt-get install -y software-properties-common \ 
+    && add-apt-repository -y ppa:ubuntugis/ubuntugis-unstable \
+    && add-apt-repository -y ppa:ubuntu-toolchain-r/test
+
+RUN apt-get update && apt-get install --fix-missing -y --no-install-recommends \ 
+  gcc-7 \
+  g++-7 \
+  autoconf \
+  automake \
+  libtool \
+  libgeos-dev \
+  libproj-dev \   
+  libfuse2 \
+  libfuse-dev \
+  build-essential \ 
+  git \ 
+  subversion \
+  p7zip-full \
+  python \
+  python-dev \
+  python-pip \
+  python-scipy \
+  libxml2-dev \
+  libxslt-dev \
+  libgdal-dev \  
+  gdal-bin \
+  python-gdal \
+  grass \
+  grass-dev \
+  libbsd-dev \
+  vlc  \
+  libx11-dev \
+  man-db \
+  wget \
+  bash-completion \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/
+
+RUN git clone git://git.mpich.org/mpich.git /tmp/mpich \
+    && cd /tmp/mpich \
+    && git submodule update --init \
+    && ./autogen.sh \
+    && ./configure --prefix=/usr \
+    && make -j8 \
+    && make -j8 install \
+    && rm -rf /tmp/mpich
+
+RUN git clone --branch Develop https://github.com/dtarb/TauDEM.git /home/jovyan/libs/TauDEM \
+    && cd /home/jovyan/libs/TauDEM \
+    && git checkout bceeef2f6a399aa23749a7c7cae7fed521ea910f \
+    && cd /home/jovyan/libs/TauDEM/src \
+    && sed -i 's#\.\.#/usr/local/bin#g' makefile \
+    && make \
+    && rm -rf /home/jovyan/libs/TauDEM
+
+### END TauDEM installation
+
+### Python3 library
+RUN conda install -y \
+    pandas \
+    gdal \
+    basemap \
+    geopandas \
+    markdown2 \
+    osmnx=0.5.4 \
+    scikit-image \
+ && conda clean --all -y
+### End Python3 library 
+
+USER jovyan
+
+### Python2 kernel
+RUN conda create --name python2 python=2.7
+
+RUN conda install -y -n python2 \
+    pandas \
+    gdal \
+    proj4 \
+    basemap \
+    ipykernel \
+    geopandas \
+    markdown2 \
+    osmnx=0.5.4 \
+    scikit-image \
+    rasterio \
+    mplleaflet \
+    folium \
+    proj4 \
+ && conda clean --all -y
+
+#RUN conda install -y -n python2 -c mikesilva \
+#    smopy \
+# && conda clean --all -y
+
+#RUN conda install -y -n python2 -c conda-forge \
+#    basemap \ 
+# && conda clean --all -y
+
+RUN /opt/conda/envs/python2/bin/python -m ipykernel install \
+    --user \
+    --name "python2" \
+    --display-name "Python 2" 
+
+RUN conda install -y -n python2 xarray && conda clean --all -y
+### End Python2 kernel
+#### Add for Keras
+RUN conda create --name keras python=3.6
+
+RUN conda install  -c jjh_cio_testing/label/in_defaults  -n keras \
+    keras \
+ && conda clean --all -y
+
+
+RUN conda install -y -n keras \
+    ipykernel \
+ && conda clean --all -y
+
+RUN /opt/conda/envs/keras/bin/python -m ipykernel install \
+    --user \
+    --name "keras" \
+    --display-name "Python 3.6 - Keras"
+
+#### End Add for Keras
+
+# Create Hydro-Py3 env (Drew)
+USER jovyan
+
+# conda env
+RUN conda create -y -n hydro-py3 python=3 && \
+    conda install -y -n hydro-py3 -c default holoviews geoviews datashader panel fiona shapely rasterio && \
+    conda install -y -n hydro-py3 -c default paramiko ipywidgets pyproj ipython numpy xarray matplotlib geopandas seaborn netCDF4 requests && \
+    conda install -y -n hydro-py3 -c conda-forge ipyleaflet jupyterthemes hs_restclient && \
+    conda clean --all -y
+
+# kernel
+RUN /opt/conda/envs/hydro-py3/bin/python -m ipykernel install \
+    --user \
+    --name "hydro-py3" \
+    --display-name "Hydro-Python3"
+# End for Hydro-Py3
+
+
+USER root
+
+ADD . /opt/cybergis
+WORKDIR /opt/cybergis
+RUN conda install -y -n python2 -c default holoviews geoviews datashader panel fiona shapely rasterio && \
+    conda install -y -n python2 -c default paramiko ipywidgets pyproj ipython numpy xarray matplotlib geopandas seaborn netCDF4 requests && \
+    conda install -y -n python2 -c conda-forge ipyleaflet jupyterthemes hs_restclient && \
+    conda clean --all -y
+RUN /opt/conda/envs/python2/bin/python setup.py install
+
+WORKDIR /home/jovyan
